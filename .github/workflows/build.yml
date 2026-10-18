@@ -8,7 +8,6 @@ on:
     paths:
       - ".github/workflows/build.yml"
       - "config/**"
-      - "feeds.conf.default"
       - "README.md"
 
 permissions:
@@ -64,8 +63,9 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cp feeds.conf.default openwrt/feeds.conf.default
           cd openwrt
+          echo "Using the feeds.conf.default shipped by ImmortalWrt openwrt-24.10; no custom feed list is injected."
+          cat feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a -p luci
           ./scripts/feeds install -a -p packages
