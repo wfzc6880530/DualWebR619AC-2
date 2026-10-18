@@ -99,7 +99,14 @@ jobs:
           OC_URL="$(printf '%s' "$OC_JSON" | jq -r '[.assets[] | select(.name | test("^luci-app-openclash_.*_all\\.ipk$"))][0].browser_download_url // empty')"
           test -n "$OC_URL"
           curl -fL --retry 3 "$OC_URL" -o imagebuilder/packages/luci-app-openclash.ipk
-          ar t imagebuilder/packages/luci-app-openclash.ipk | grep -q 'data.tar'
+          # OpenWrt .ipk files are gzip-compressed tar archives, not Debian ar archives.
+          file imagebuilder/packages/luci-app-openclash.ipk
+          tar -tzf imagebuilder/packages/luci-app-openclash.ipk > /tmp/openclash-ipk-members.txt
+          grep -qxE '\./?debian-binary' /tmp/openclash-ipk-members.txt
+          grep -qxE '\./?data\.tar\.gz' /tmp/openclash-ipk-members.txt
+          grep -qxE '\./?control\.tar\.gz' /tmp/openclash-ipk-members.txt
+          echo "Validated OpenClash IPK archive members:"
+          cat /tmp/openclash-ipk-members.txt
 
           # Resolve the latest stable Mihomo release; R619AC uses ARMv7.
           MIHOMO_JSON="$(curl -fsSL --retry 3 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest)"
