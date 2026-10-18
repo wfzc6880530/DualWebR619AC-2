@@ -1,0 +1,190 @@
+name: Build DualWeb R619AC 128M (ImmortalWrt 24.10)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build.yml"
+      - "config/**"
+      - "feeds.conf.default"
+      - "README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dualweb-r619ac-24.10-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout build configuration
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        shell: bash
+        run: |
+          set -eux
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/share/powershell
+          sudo docker system prune -af || true
+          sudo apt-get clean
+          df -h
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses-dev libssl-dev python3 python3-setuptools \
+            python3-dev rsync swig unzip zlib1g-dev file wget curl ca-certificates \
+            time xsltproc libxml-parser-perl libelf-dev ecj fastjar java-propose-classpath \
+            zstd
+
+      - name: Clone ImmortalWrt 24.10
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth=1 --branch openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git openwrt
+          cd openwrt
+          echo "===== ImmortalWrt revision ====="
+          git log -1 --format='%H %s'
+          echo "===== Verify R619AC device definition ====="
+          grep -n -E 'p2w_r619ac-128m|p2w_r619ac' target/linux/ipq40xx/image/generic.mk
+          grep -Rni -E 'p2w_r619ac-128m' target/linux/ipq40xx
+          test -d target/linux/ipq40xx
+
+      - name: Configure feeds
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cp feeds.conf.default openwrt/feeds.conf.default
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a -p luci
+          ./scripts/feeds install -a -p packages
+          ./scripts/feeds install -a -p routing
+
+      - name: Fetch DualWeb UI/API/overlay
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth=1 --branch test/openbox-artifacts https://github.com/wfzc6880530/dualweb.git dualweb
+          test -f dualweb/src/main.go
+          test -f dualweb/overlay/etc/uci-defaults/99-dualweb
+          test -f dualweb/overlay/etc/init.d/dualweb-api
+          test -f dualweb/overlay/etc/init.d/dualweb-firstboot
+          test -f dualweb/overlay/usr/sbin/dualweb-firstboot-packages
+
+      - name: Build DualWeb API for ARMv7
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd dualweb
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
+            go build -trimpath -ldflags='-s -w' \
+            -o overlay/usr/sbin/dualweb-api src/main.go
+          file overlay/usr/sbin/dualweb-api
+          chmod 0755 overlay/usr/sbin/dualweb-api
+          chmod 0755 overlay/etc/uci-defaults/99-dualweb
+          chmod 0755 overlay/etc/init.d/dualweb-api
+          chmod 0755 overlay/etc/init.d/dualweb-firstboot
+          chmod 0755 overlay/usr/sbin/dualweb-firstboot-packages
+
+      - name: Apply R619AC config and validate TLS backend
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd openwrt
+          cp ../config/r619ac.config .config
+          make defconfig
+          echo "===== Target after defconfig ====="
+          grep -E '^CONFIG_TARGET_(ipq40xx|ipq40xx_generic)=|^CONFIG_TARGET_ipq40xx_generic_DEVICE_p2w_r619ac-128m=' .config
+          grep -qx 'CONFIG_TARGET_ipq40xx=y' .config
+          grep -qx 'CONFIG_TARGET_ipq40xx_generic=y' .config
+          grep -qx 'CONFIG_TARGET_ipq40xx_generic_DEVICE_p2w_r619ac-128m=y' .config
+          grep -qx 'CONFIG_PACKAGE_libustream-openssl=y' .config
+          if grep -qx 'CONFIG_PACKAGE_libustream-mbedtls=y' .config; then
+            echo "ERROR: mbedTLS ustream selected alongside OpenSSL backend" >&2
+            exit 1
+          fi
+          if grep -qx 'CONFIG_PACKAGE_libustream-wolfssl=y' .config; then
+            echo "ERROR: wolfSSL ustream selected alongside OpenSSL backend" >&2
+            exit 1
+          fi
+          echo "TLS backend check passed."
+
+      - name: Install DualWeb overlay
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p openwrt/files
+          cp -a dualweb/overlay/. openwrt/files/
+          chmod 0755 openwrt/files/etc/uci-defaults/99-dualweb
+          chmod 0755 openwrt/files/etc/init.d/dualweb-api
+          chmod 0755 openwrt/files/etc/init.d/dualweb-firstboot
+          chmod 0755 openwrt/files/usr/sbin/dualweb-firstboot-packages
+
+      - name: Download sources
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd openwrt
+          make -j2 download
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd openwrt
+          make -j2 V=s
+
+      - name: Collect R619AC 128M firmware and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p firmware
+          cd openwrt
+          TARGET_DIR="bin/targets/ipq40xx/generic"
+          test -d "$TARGET_DIR"
+          find "$TARGET_DIR" -maxdepth 1 -type f -print
+          FACTORY="$(find "$TARGET_DIR" -maxdepth 1 -type f \
+            \( -name '*p2w_r619ac-128m*factory.ubi' -o -name '*p2w_r619ac-128m*factory.bin' \) -print -quit)"
+          SYSUPGRADE="$(find "$TARGET_DIR" -maxdepth 1 -type f \
+            -name '*p2w_r619ac-128m*sysupgrade.bin' -print -quit)"
+          test -n "$FACTORY" || { echo 'ERROR: R619AC 128M factory image not found'; exit 1; }
+          test -n "$SYSUPGRADE" || { echo 'ERROR: R619AC 128M sysupgrade image not found'; exit 1; }
+          cp "$FACTORY" ../firmware/
+          cp "$SYSUPGRADE" ../firmware/
+          cp "$TARGET_DIR"/profiles.json ../firmware/ 2>/dev/null || true
+          cp "$TARGET_DIR"/sha256sums ../firmware/ 2>/dev/null || true
+          cp "$TARGET_DIR"/*.manifest ../firmware/ 2>/dev/null || true
+          cp "$TARGET_DIR"/version.buildinfo ../firmware/ 2>/dev/null || true
+          cd ../firmware
+          sha256sum * > SHA256SUMS.local
+          ls -lah
+          cat SHA256SUMS.local
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DualWeb-ImmortalWrt-24.10-R619AC-128M
+          path: firmware/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build summary
+        if: always()
+        shell: bash
+        run: |
+          df -h
+          echo "Base: ImmortalWrt openwrt-24.10"
+          echo "Target: ipq40xx/generic / p2w_r619ac-128m"
+          echo "TLS backend: libustream-openssl only"
+          echo "DualWeb API: ARMv7"
