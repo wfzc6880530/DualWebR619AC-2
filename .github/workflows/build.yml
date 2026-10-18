@@ -87,26 +87,19 @@ jobs:
           chmod 0755 overlay/etc/uci-defaults/99-dualweb
           chmod 0755 overlay/etc/init.d/dualweb-api
 
-      - name: Download latest OpenClash, Mihomo core and Vantage theme for 24.10
+      - name: Download pinned OpenClash, Mihomo core and Vantage theme for 24.10
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p imagebuilder/packages dualweb/overlay/etc/openclash/core dualweb/overlay/etc/dualweb
 
-          # Resolve the latest stable OpenClash release and download its IPK.
-          OC_JSON="$(curl -fsSL --retry 3 https://api.github.com/repos/vernesong/OpenClash/releases/latest)"
-          OC_TAG="$(printf '%s' "$OC_JSON" | jq -r '.tag_name')"
-          OC_URL="$(printf '%s' "$OC_JSON" | jq -r '[.assets[] | select(.name | test("^luci-app-openclash_.*_all\\.ipk$"))][0].browser_download_url // empty')"
-          test -n "$OC_URL"
+          # Pin a known release and verify its published SHA-256.
+          OC_TAG="v0.48.002"
+          OC_URL="https://github.com/vernesong/OpenClash/releases/download/v0.48.002/luci-app-openclash_0.48.002_all.ipk"
+          OC_SHA256="f3f0d0514553aea8d542c62dc52ac26d1f79dbda24204280f1cb8ea7fff71e9e"
           curl -fL --retry 3 "$OC_URL" -o imagebuilder/packages/luci-app-openclash.ipk
-          # OpenWrt .ipk files are gzip-compressed tar archives, not Debian ar archives.
+          echo "$OC_SHA256  imagebuilder/packages/luci-app-openclash.ipk" | sha256sum -c -
           file imagebuilder/packages/luci-app-openclash.ipk
-          tar -tzf imagebuilder/packages/luci-app-openclash.ipk > /tmp/openclash-ipk-members.txt
-          grep -qxE '\./?debian-binary' /tmp/openclash-ipk-members.txt
-          grep -qxE '\./?data\.tar\.gz' /tmp/openclash-ipk-members.txt
-          grep -qxE '\./?control\.tar\.gz' /tmp/openclash-ipk-members.txt
-          echo "Validated OpenClash IPK archive members:"
-          cat /tmp/openclash-ipk-members.txt
 
           # Resolve the latest stable Mihomo release; R619AC uses ARMv7.
           MIHOMO_JSON="$(curl -fsSL --retry 3 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest)"
@@ -210,4 +203,4 @@ jobs:
           echo "DualWeb homepage: nginx TCP/80"
           echo "LuCI default: uhttpd TCP/8080 with Vantage theme"
           echo "NPS: nps + npc + luci-app-nps"
-          echo "OpenClash: latest stable package + latest Mihomo ARMv7 core"
+          echo "OpenClash: v0.48.002 (SHA-256 verified) + latest Mihomo ARMv7 core"
