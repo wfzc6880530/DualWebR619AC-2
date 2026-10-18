@@ -95,7 +95,7 @@ jobs:
           # or manipulating TARGET_DEVICE symbols through make defconfig.
           # ImageBuilder selects the device profile directly and avoids the failing
           # source-tree .config path entirely.
-          PACKAGES="luci luci-base luci-mod-admin-full luci-theme-bootstrap luci-i18n-base-zh-cn luci-ssl-openssl nginx nginx-mod-http-proxy cgi-io rpcd rpcd-mod-ucode rpcd-mod-file uhttpd uhttpd-mod-ubus ca-bundle ca-certificates curl wget-ssl htop ip-full kmod-tun kmod-nft-tproxy firewall4 nftables dnsmasq-full block-mount fstools kmod-usb-storage kmod-fs-ext4 kmod-fs-vfat kmod-nls-cp437 kmod-nls-iso8859-1 libustream-openssl -libustream-mbedtls -libustream-wolfssl"
+          PACKAGES="luci luci-base luci-mod-admin-full luci-theme-bootstrap luci-i18n-base-zh-cn luci-ssl-openssl nginx cgi-io rpcd rpcd-mod-ucode rpcd-mod-file uhttpd uhttpd-mod-ubus ca-bundle ca-certificates curl wget-ssl htop ip-full kmod-tun kmod-nft-tproxy firewall4 nftables dnsmasq-full block-mount fstools kmod-usb-storage kmod-fs-ext4 kmod-fs-vfat kmod-nls-cp437 kmod-nls-iso8859-1 libustream-openssl -libustream-mbedtls -libustream-wolfssl"
 
           echo "===== Build R619AC 128M images ====="
           make image PROFILE="p2w_r619ac-128m" PACKAGES="$PACKAGES" FILES="files"
