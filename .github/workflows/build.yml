@@ -1,4 +1,4 @@
-name: Build DualWeb R619AC 128M (ImmortalWrt 24.10 ImageBuilder)
+name: Build DualWeb R619AC 128M (ImmortalWrt 24.10 + OpenClash + NPS)
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - name: Checkout build configuration
         uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential gettext git libncurses-dev zlib1g-dev file wget curl \
-            ca-certificates python3 rsync unzip zstd golang-go
+            ca-certificates python3 rsync unzip zstd golang-go jq gzip
 
       - name: Download official ImmortalWrt 24.10.5 ImageBuilder
         shell: bash
@@ -44,21 +44,35 @@ jobs:
           tar --zstd -xf imagebuilder.tar.zst -C imagebuilder --strip-components=1
           test -f imagebuilder/Makefile
           cd imagebuilder
-          echo "===== ImageBuilder version and target ====="
-          grep -E '^(CONFIG_TARGET|CONFIG_VERSION|CONFIG_ARCH)' .config 2>/dev/null || true
           make info | tee ../imagebuilder-profiles.txt
           grep -i -B 2 -A 3 'p2w_r619ac-128m' ../imagebuilder-profiles.txt
 
-      - name: Fetch DualWeb UI/API/overlay
+      - name: Fetch DualWeb UI and prepare 24.10 boot scripts
         shell: bash
         run: |
           set -euxo pipefail
           git clone --depth=1 --branch test/openbox-artifacts https://github.com/wfzc6880530/dualweb.git dualweb
           test -f dualweb/src/main.go
           test -f dualweb/overlay/etc/uci-defaults/99-dualweb
-          test -f dualweb/overlay/etc/init.d/dualweb-api
-          test -f dualweb/overlay/etc/init.d/dualweb-firstboot
-          test -f dualweb/overlay/usr/sbin/dualweb-firstboot-packages
+          test -f dualweb/overlay/etc/nginx/conf.d/dualweb.conf
+          test -f dualweb/overlay/etc/config/uhttpd
+
+          # The upstream first-boot installer is APK/25.12-specific and installs Nikki.
+          # This firmware is ImmortalWrt 24.10/opkg and uses OpenClash, so disable that
+          # installer rather than leaving a background retry loop on every boot.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("dualweb/overlay/etc/uci-defaults/99-dualweb")
+          s = p.read_text()
+          old = "# Run package installation under procd, not as a child of uci-defaults.\n/etc/init.d/dualweb-firstboot enable\n/etc/init.d/dualweb-firstboot start\n"
+          if old not in s:
+              raise SystemExit("Expected APK first-boot installer block not found; refusing unsafe patch")
+          s = s.replace(old, "# Packages are included in the firmware image for ImmortalWrt 24.10.\n")
+          p.write_text(s)
+          PY
+          rm -f dualweb/overlay/etc/init.d/dualweb-firstboot
+          rm -f dualweb/overlay/usr/sbin/dualweb-firstboot-packages
+          ! grep -q 'dualweb-firstboot' dualweb/overlay/etc/uci-defaults/99-dualweb
 
       - name: Build DualWeb API for ARMv7
         shell: bash
@@ -72,8 +86,53 @@ jobs:
           chmod 0755 overlay/usr/sbin/dualweb-api
           chmod 0755 overlay/etc/uci-defaults/99-dualweb
           chmod 0755 overlay/etc/init.d/dualweb-api
-          chmod 0755 overlay/etc/init.d/dualweb-firstboot
-          chmod 0755 overlay/usr/sbin/dualweb-firstboot-packages
+
+      - name: Download latest OpenClash, Mihomo core and Vantage theme for 24.10
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p imagebuilder/packages dualweb/overlay/etc/openclash/core dualweb/overlay/etc/dualweb
+
+          # Resolve the latest stable OpenClash release and download its IPK.
+          OC_JSON="$(curl -fsSL --retry 3 https://api.github.com/repos/vernesong/OpenClash/releases/latest)"
+          OC_TAG="$(printf '%s' "$OC_JSON" | jq -r '.tag_name')"
+          OC_URL="$(printf '%s' "$OC_JSON" | jq -r '[.assets[] | select(.name | test("^luci-app-openclash_.*_all\\.ipk$"))][0].browser_download_url // empty')"
+          test -n "$OC_URL"
+          curl -fL --retry 3 "$OC_URL" -o imagebuilder/packages/luci-app-openclash.ipk
+          ar t imagebuilder/packages/luci-app-openclash.ipk | grep -q 'data.tar'
+
+          # Resolve the latest stable Mihomo release; R619AC uses ARMv7.
+          MIHOMO_JSON="$(curl -fsSL --retry 3 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest)"
+          MIHOMO_TAG="$(printf '%s' "$MIHOMO_JSON" | jq -r '.tag_name')"
+          MIHOMO_URL="$(printf '%s' "$MIHOMO_JSON" | jq -r '[.assets[] | select(.name | test("^mihomo-linux-armv7-v.*\\.gz$"))][0].browser_download_url // empty')"
+          test -n "$MIHOMO_URL"
+          curl -fL --retry 3 "$MIHOMO_URL" -o /tmp/mihomo-armv7.gz
+          gzip -t /tmp/mihomo-armv7.gz
+          gzip -dc /tmp/mihomo-armv7.gz > dualweb/overlay/etc/openclash/core/clash_meta
+          chmod 0755 dualweb/overlay/etc/openclash/core/clash_meta
+          file dualweb/overlay/etc/openclash/core/clash_meta
+          dualweb/overlay/etc/openclash/core/clash_meta -v
+
+          # Vantage 1.0.8 provides an explicit 24.10 build; do not use its 25.12 APK.
+          curl -fL --retry 3 \
+            https://github.com/anothaDev/luci-theme-vantage/releases/download/v1.0.8/luci-theme-vantage_1.0.8-r1_all.ipk \
+            -o imagebuilder/packages/luci-theme-vantage_1.0.8-r1_all.ipk
+          curl -fL --retry 3 \
+            https://github.com/anothaDev/luci-theme-vantage/releases/download/v1.0.8/luci-i18n-vantage-zh-cn_1.0.8-r1_all.ipk \
+            -o imagebuilder/packages/luci-i18n-vantage-zh-cn_1.0.8-r1_all.ipk
+
+          # Pin downloaded component versions in the image for post-flash verification.
+          cat > dualweb/overlay/etc/dualweb/build-info.txt <<EOF
+          Base: ImmortalWrt 24.10.5
+          Device: P&W R619AC 128M (p2w_r619ac-128m)
+          OpenClash: $OC_TAG
+          Mihomo core: $MIHOMO_TAG (linux-armv7)
+          LuCI theme: Vantage 1.0.8 (24.10 IPK)
+          Web UI: DualWeb on TCP/80
+          LuCI: uhttpd on TCP/8080
+          NPS: nps + npc + luci-app-nps
+          EOF
+          cat dualweb/overlay/etc/dualweb/build-info.txt
 
       - name: Build R619AC firmware with ImageBuilder
         shell: bash
@@ -82,20 +141,23 @@ jobs:
           cd imagebuilder
           mkdir -p files
           cp -a ../dualweb/overlay/. files/
+
           chmod 0755 files/etc/uci-defaults/99-dualweb
           chmod 0755 files/etc/init.d/dualweb-api
-          chmod 0755 files/etc/init.d/dualweb-firstboot
-          chmod 0755 files/usr/sbin/dualweb-firstboot-packages
+          chmod 0755 files/usr/sbin/dualweb-api
+          chmod 0755 files/etc/openclash/core/clash_meta
+
+          echo "===== Index local IPK packages ====="
+          make package/index
+          grep -E '^(Package: (luci-app-openclash|luci-theme-vantage|luci-i18n-vantage-zh-cn))$' packages/Packages || true
 
           echo "===== Confirm exact profile exists ====="
           make info > ../imagebuilder-profiles-final.txt
           grep -i -B 2 -A 3 'p2w_r619ac-128m' ../imagebuilder-profiles-final.txt
 
-          # Use the official prebuilt ImageBuilder rather than rebuilding the kernel
-          # or manipulating TARGET_DEVICE symbols through make defconfig.
-          # ImageBuilder selects the device profile directly and avoids the failing
-          # source-tree .config path entirely.
-          PACKAGES="luci luci-base luci-mod-admin-full luci-theme-bootstrap luci-i18n-base-zh-cn luci-ssl-openssl nginx cgi-io rpcd rpcd-mod-ucode rpcd-mod-file uhttpd uhttpd-mod-ubus ca-bundle ca-certificates curl wget-ssl htop ip-full kmod-tun kmod-nft-tproxy firewall4 nftables dnsmasq-full block-mount fstools kmod-usb-storage kmod-fs-ext4 kmod-fs-vfat kmod-nls-cp437 kmod-nls-iso8859-1 libustream-openssl -libustream-mbedtls -libustream-wolfssl"
+          # Keep the working 24.10.5 base and add only packages available for this target.
+          # OpenClash uses the latest upstream ARMv7 Mihomo core bundled in /etc/openclash/core.
+          PACKAGES="luci luci-base luci-mod-admin-full luci-theme-vantage luci-i18n-vantage-zh-cn luci-ssl-openssl nginx cgi-io rpcd rpcd-mod-ucode rpcd-mod-file uhttpd uhttpd-mod-ubus ca-bundle ca-certificates curl wget-ssl htop ip-full kmod-tun kmod-nft-tproxy firewall4 nftables dnsmasq-full block-mount fstools kmod-usb-storage kmod-fs-ext4 kmod-fs-vfat kmod-nls-cp437 kmod-nls-iso8859-1 libustream-openssl bash ipset iptables-mod-tproxy kmod-ipt-tproxy luci-compat ruby ruby-yaml coreutils-nohup unzip nps npc luci-app-nps luci-app-openclash -libustream-mbedtls -libustream-wolfssl"
 
           echo "===== Build R619AC 128M images ====="
           make image PROFILE="p2w_r619ac-128m" PACKAGES="$PACKAGES" FILES="files"
@@ -105,8 +167,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p firmware
-          find imagebuilder/bin/targets/ipq40xx/generic -maxdepth 1 -type f -print
           TARGET_DIR="imagebuilder/bin/targets/ipq40xx/generic"
+          find "$TARGET_DIR" -maxdepth 1 -type f -print
           FACTORY="$(find "$TARGET_DIR" -maxdepth 1 -type f -name '*p2w_r619ac-128m*squashfs-factory.ubi' -print -quit)"
           SYSUPGRADE="$(find "$TARGET_DIR" -maxdepth 1 -type f -name '*p2w_r619ac-128m*squashfs-sysupgrade.bin' -print -quit)"
           test -n "$FACTORY" || { echo 'ERROR: R619AC 128M factory.ubi not found'; exit 1; }
@@ -117,6 +179,7 @@ jobs:
           cp "$TARGET_DIR"/sha256sums firmware/ 2>/dev/null || true
           cp "$TARGET_DIR"/*.manifest firmware/ 2>/dev/null || true
           cp "$TARGET_DIR"/version.buildinfo firmware/ 2>/dev/null || true
+          cp dualweb/overlay/etc/dualweb/build-info.txt firmware/ 2>/dev/null || true
           cd firmware
           sha256sum * > SHA256SUMS.local
           ls -lah
@@ -125,7 +188,7 @@ jobs:
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: DualWeb-ImmortalWrt-24.10.5-R619AC-128M
+          name: DualWeb-ImmortalWrt-24.10.5-R619AC-128M-OpenClash-NPS-Vantage
           path: firmware/
           if-no-files-found: error
           retention-days: 14
@@ -137,5 +200,7 @@ jobs:
           df -h
           echo "Base: official ImmortalWrt 24.10.5 ImageBuilder"
           echo "Target: ipq40xx/generic / p2w_r619ac-128m"
-          echo "TLS backend preference: libustream-openssl"
-          echo "DualWeb API: ARMv7"
+          echo "DualWeb homepage: nginx TCP/80"
+          echo "LuCI default: uhttpd TCP/8080 with Vantage theme"
+          echo "NPS: nps + npc + luci-app-nps"
+          echo "OpenClash: latest stable package + latest Mihomo ARMv7 core"
