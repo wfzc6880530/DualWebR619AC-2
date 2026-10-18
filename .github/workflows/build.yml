@@ -102,12 +102,28 @@ jobs:
         run: |
           set -euxo pipefail
           cd openwrt
-          # First pass generates target/device Kconfig metadata from the official source tree.
-          # On a fresh checkout, running defconfig only after copying the custom config can
-          # discard device symbols that have not been generated yet.
+
+          # Bootstrap target metadata with the target/subtarget selected first.
+          # A defconfig on an empty checkout can cache target metadata for the default
+          # target, before the ipq40xx device profile has been selected.
+          grep -E '^CONFIG_TARGET_ipq40xx=y$|^CONFIG_TARGET_ipq40xx_generic=y$' ../config/r619ac.config > .config
+          test "$(wc -l < .config)" -eq 2
+          echo "===== Bootstrap target selection ====="
+          cat .config
           make defconfig
+
+          echo "===== Verify generated target metadata contains R619AC 128M ====="
+          grep -Rni 'p2w_r619ac-128m' tmp/.config-target.in tmp/.targetinfo target/linux/ipq40xx 2>/dev/null || true
+          grep -Rqs 'p2w_r619ac-128m' tmp/.config-target.in || {
+            echo "ERROR: generated tmp/.config-target.in does not contain the R619AC 128M profile" >&2
+            echo "===== target metadata files =====" >&2
+            ls -lah tmp/.config-target.in tmp/.targetinfo 2>/dev/null || true
+            exit 1
+          }
+
           cp ../config/r619ac.config .config
           make defconfig
+
           echo "===== Target after defconfig ====="
           grep -E '^CONFIG_TARGET_(ipq40xx|ipq40xx_generic)=|^CONFIG_TARGET_DEVICE_ipq40xx_generic_DEVICE_p2w_r619ac-128m=' .config
           grep -qx 'CONFIG_TARGET_ipq40xx=y' .config
