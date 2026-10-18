@@ -110,8 +110,8 @@ jobs:
           gzip -t /tmp/mihomo-armv7.gz
           gzip -dc /tmp/mihomo-armv7.gz > dualweb/overlay/etc/openclash/core/clash_meta
           chmod 0755 dualweb/overlay/etc/openclash/core/clash_meta
-          file dualweb/overlay/etc/openclash/core/clash_meta
-          dualweb/overlay/etc/openclash/core/clash_meta -v
+          file dualweb/overlay/etc/openclash/core/clash_meta | tee /tmp/mihomo-file.txt
+          grep -E 'ARM|EABI' /tmp/mihomo-file.txt
 
           # Vantage 1.0.8 provides an explicit 24.10 build; do not use its 25.12 APK.
           curl -fL --retry 3 \
