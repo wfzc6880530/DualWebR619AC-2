@@ -105,10 +105,10 @@ jobs:
           cp ../config/r619ac.config .config
           make defconfig
           echo "===== Target after defconfig ====="
-          grep -E '^CONFIG_TARGET_(ipq40xx|ipq40xx_generic)=|^CONFIG_TARGET_ipq40xx_generic_DEVICE_p2w_r619ac-128m=' .config
+          grep -E '^CONFIG_TARGET_(ipq40xx|ipq40xx_generic)=|^CONFIG_TARGET_DEVICE_ipq40xx_generic_DEVICE_p2w_r619ac-128m=' .config
           grep -qx 'CONFIG_TARGET_ipq40xx=y' .config
           grep -qx 'CONFIG_TARGET_ipq40xx_generic=y' .config
-          grep -qx 'CONFIG_TARGET_ipq40xx_generic_DEVICE_p2w_r619ac-128m=y' .config
+          grep -qx 'CONFIG_TARGET_DEVICE_ipq40xx_generic_DEVICE_p2w_r619ac-128m=y' .config
           grep -qx 'CONFIG_PACKAGE_libustream-openssl=y' .config
           if grep -qx 'CONFIG_PACKAGE_libustream-mbedtls=y' .config; then
             echo "ERROR: mbedTLS ustream selected alongside OpenSSL backend" >&2
