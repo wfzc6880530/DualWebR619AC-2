@@ -102,6 +102,10 @@ jobs:
         run: |
           set -euxo pipefail
           cd openwrt
+          # First pass generates target/device Kconfig metadata from the official source tree.
+          # On a fresh checkout, running defconfig only after copying the custom config can
+          # discard device symbols that have not been generated yet.
+          make defconfig
           cp ../config/r619ac.config .config
           make defconfig
           echo "===== Target after defconfig ====="
