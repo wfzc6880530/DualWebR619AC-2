@@ -147,9 +147,10 @@ jobs:
           chmod 0755 files/usr/sbin/dualweb-api
           chmod 0755 files/etc/openclash/core/clash_meta
 
-          echo "===== Index local IPK packages ====="
-          make package/index
-          grep -E '^(Package: (luci-app-openclash|luci-theme-vantage|luci-i18n-vantage-zh-cn))$' packages/Packages || true
+          # ImageBuilder automatically refreshes the local packages index during make image.
+          # Do not call "make package/index": that target does not exist in the ImageBuilder Makefile.
+          echo "===== Local IPK packages prepared for ImageBuilder ====="
+          ls -lh packages/*.ipk
 
           echo "===== Confirm exact profile exists ====="
           make info > ../imagebuilder-profiles-final.txt
