@@ -113,7 +113,10 @@ jobs:
           file dualweb/overlay/etc/openclash/core/clash_meta | tee /tmp/mihomo-file.txt
           grep -E 'ARM|EABI' /tmp/mihomo-file.txt
 
-          # Vantage 1.0.8 provides an explicit 24.10 build; do not use its 25.12 APK.
+          # Vantage 1.0.8 theme has a 24.10 IPK. The separately published zh-cn
+          # language IPK declares a dependency on luci-app-vantage, which is not
+          # provided by this theme release and makes ImageBuilder fail. Keep the
+          # theme, omit that incompatible translation package, and use LuCI base zh-cn.
           curl -fL --retry 3 \
             https://github.com/anothaDev/luci-theme-vantage/releases/download/v1.0.8/luci-theme-vantage_1.0.8-r1_all.ipk \
             -o imagebuilder/packages/luci-theme-vantage_1.0.8-r1_all.ipk
@@ -158,7 +161,7 @@ jobs:
 
           # Keep the working 24.10.5 base and add only packages available for this target.
           # OpenClash uses the latest upstream ARMv7 Mihomo core bundled in /etc/openclash/core.
-          PACKAGES="luci luci-base luci-mod-admin-full luci-theme-vantage luci-i18n-vantage-zh-cn luci-ssl-openssl nginx cgi-io rpcd rpcd-mod-ucode rpcd-mod-file uhttpd uhttpd-mod-ubus ca-bundle ca-certificates curl wget-ssl htop ip-full kmod-tun kmod-nft-tproxy firewall4 nftables dnsmasq-full block-mount fstools kmod-usb-storage kmod-fs-ext4 kmod-fs-vfat kmod-nls-cp437 kmod-nls-iso8859-1 libustream-openssl bash ipset iptables-mod-tproxy kmod-ipt-tproxy luci-compat ruby ruby-yaml coreutils-nohup unzip nps npc luci-app-nps luci-app-openclash -libustream-mbedtls -libustream-wolfssl"
+          PACKAGES="luci luci-base luci-mod-admin-full luci-theme-vantage luci-ssl-openssl nginx cgi-io rpcd rpcd-mod-ucode rpcd-mod-file uhttpd uhttpd-mod-ubus ca-bundle ca-certificates curl wget-ssl htop ip-full kmod-tun kmod-nft-tproxy firewall4 nftables dnsmasq-full block-mount fstools kmod-usb-storage kmod-fs-ext4 kmod-fs-vfat kmod-nls-cp437 kmod-nls-iso8859-1 libustream-openssl bash ipset iptables-mod-tproxy kmod-ipt-tproxy luci-compat ruby ruby-yaml coreutils-nohup unzip nps npc luci-app-nps luci-app-openclash -libustream-mbedtls -libustream-wolfssl"
 
           echo "===== Build R619AC 128M images ====="
           make image PROFILE="p2w_r619ac-128m" PACKAGES="$PACKAGES" FILES="files"
