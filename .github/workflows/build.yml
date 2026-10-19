@@ -117,9 +117,8 @@ jobs:
           uci commit network || exit 1
 
           # Set the root password from a SHA-512 crypt hash (plaintext is not stored).
-          HASH='{password_hash}'
           if [ -f /etc/shadow ]; then
-              sed -i "s#^root:[^:]*:#root:${{HASH}}:#" /etc/shadow || exit 1
+              sed -i 's#^root:[^:]*:#root:{password_hash}:#' /etc/shadow || exit 1
           else
               echo "ERROR: /etc/shadow not found" >&2
               exit 1
