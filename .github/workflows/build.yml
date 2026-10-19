@@ -9,6 +9,7 @@ on:
       - ".github/workflows/build.yml"
       - "config/**"
       - "README.md"
+      - "web/**"
 
 permissions:
   contents: read
@@ -73,6 +74,38 @@ jobs:
           rm -f dualweb/overlay/etc/init.d/dualweb-firstboot
           rm -f dualweb/overlay/usr/sbin/dualweb-firstboot-packages
           ! grep -q 'dualweb-firstboot' dualweb/overlay/etc/uci-defaults/99-dualweb
+
+      - name: Install Zashboard and DualWeb integration
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dualweb/overlay/www/dualweb/zashboard dualweb/overlay/usr/sbin
+          rm -rf /tmp/zashboard-dist
+          mkdir -p /tmp/zashboard-dist
+
+          # Fetch the official static Zashboard release; no container/runtime is added.
+          curl -fL --retry 3 --retry-delay 2 \
+            https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip \
+            -o /tmp/zashboard-dist.zip
+          unzip -tq /tmp/zashboard-dist.zip
+          unzip -q /tmp/zashboard-dist.zip -d /tmp/zashboard-dist
+          ZASHBOARD_INDEX="$(find /tmp/zashboard-dist -type f -name index.html -print -quit)"
+          test -n "$ZASHBOARD_INDEX"
+          cp -a "$(dirname "$ZASHBOARD_INDEX")"/. dualweb/overlay/www/dualweb/zashboard/
+          test -s dualweb/overlay/www/dualweb/zashboard/index.html
+
+          # Keep project-owned integration files separate from the upstream DualWeb repo.
+          cp web/dualweb-index.html dualweb/overlay/www/dualweb/index.html
+          cp web/dualweb-app.js dualweb/overlay/www/dualweb/app.js
+          cp web/dualweb-nginx.conf dualweb/overlay/etc/nginx/conf.d/dualweb.conf
+          cp web/update-zashboard.sh dualweb/overlay/usr/sbin/dualweb-update-zashboard
+          chmod 0755 dualweb/overlay/usr/sbin/dualweb-update-zashboard
+
+          # Fail early if the expected embedded route or same-origin API proxy is missing.
+          grep -q 'id="zashboardFrame"' dualweb/overlay/www/dualweb/index.html
+          grep -q "secondaryPath.*clash" dualweb/overlay/www/dualweb/app.js
+          grep -q '127.0.0.1:9090' dualweb/overlay/etc/nginx/conf.d/dualweb.conf
+          echo "Zashboard assets: $(du -sh dualweb/overlay/www/dualweb/zashboard | cut -f1)"
 
       - name: Build DualWeb API for ARMv7
         shell: bash
