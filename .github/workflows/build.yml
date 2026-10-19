@@ -87,6 +87,54 @@ jobs:
           chmod 0755 overlay/etc/uci-defaults/99-dualweb
           chmod 0755 overlay/etc/init.d/dualweb-api
 
+      - name: Set default LAN address and LuCI root password securely
+        shell: bash
+        env:
+          LUCI_ROOT_PASSWORD: ${{ secrets.LUCI_ROOT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LUCI_ROOT_PASSWORD:-}" ]; then
+            echo "::error::Missing repository Actions secret LUCI_ROOT_PASSWORD. Add it in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          # Generate a SHA-512 crypt hash; the plaintext password is never written to the repository or firmware.
+          ROOT_PASSWORD_HASH="$(printf '%s' "$LUCI_ROOT_PASSWORD" | openssl passwd -6 -stdin)"
+          test -n "$ROOT_PASSWORD_HASH"
+          export ROOT_PASSWORD_HASH
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          overlay = Path("dualweb/overlay")
+          defaults = overlay / "etc/uci-defaults"
+          defaults.mkdir(parents=True, exist_ok=True)
+          password_hash = os.environ["ROOT_PASSWORD_HASH"]
+          script = f"""#!/bin/sh
+          # First-boot defaults for DualWeb R619AC.
+          # Set the LAN address requested for this firmware.
+          uci set network.lan.ipaddr='192.168.5.254' || exit 1
+          uci commit network || exit 1
+
+          # Set the root password from a SHA-512 crypt hash (plaintext is not stored).
+          HASH='{password_hash}'
+          if [ -f /etc/shadow ]; then
+              sed -i "s#^root:[^:]*:#root:${{HASH}}:#" /etc/shadow || exit 1
+          else
+              echo "ERROR: /etc/shadow not found" >&2
+              exit 1
+          fi
+
+          # uci-defaults scripts are one-shot; remove this script after successful execution.
+          exit 0
+          """
+          path = defaults / "10-dualweb-network-password"
+          path.write_text(script)
+          path.chmod(0o755)
+          print("Prepared first-boot LAN/password defaults (password hash only; plaintext omitted).")
+          PY
+          unset LUCI_ROOT_PASSWORD ROOT_PASSWORD_HASH
+
       - name: Download pinned OpenClash, Mihomo core and Vantage theme for 24.10
         shell: bash
         run: |
