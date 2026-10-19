@@ -211,7 +211,9 @@ jobs:
           OpenClash: $OC_TAG
           Mihomo core: $MIHOMO_TAG (linux-armv7)
           LuCI theme: Vantage 1.0.8 (24.10 IPK)
-          Web UI: DualWeb on TCP/80
+          Web UI: DualWeb on TCP/80 + embedded Zashboard
+          Zashboard: official static release, independently updatable
+          Clash API: same-origin Nginx proxy /clash/ -> 127.0.0.1:9090
           LuCI: uhttpd on TCP/8080
           NPS: nps + npc + luci-app-nps
           EOF
@@ -228,6 +230,7 @@ jobs:
           chmod 0755 files/etc/uci-defaults/99-dualweb
           chmod 0755 files/etc/init.d/dualweb-api
           chmod 0755 files/usr/sbin/dualweb-api
+          chmod 0755 files/usr/sbin/dualweb-update-zashboard
           chmod 0755 files/etc/openclash/core/clash_meta
 
           # ImageBuilder automatically refreshes the local packages index during make image.
@@ -284,7 +287,7 @@ jobs:
           df -h
           echo "Base: official ImmortalWrt 24.10.5 ImageBuilder"
           echo "Target: ipq40xx/generic / p2w_r619ac-128m"
-          echo "DualWeb homepage: nginx TCP/80"
+          echo "DualWeb homepage: nginx TCP/80 + embedded Zashboard"
           echo "LuCI default: uhttpd TCP/8080 with Vantage theme"
           echo "NPS: nps + npc + luci-app-nps"
           echo "OpenClash: v0.48.002 (SHA-256 verified) + latest Mihomo ARMv7 core"
