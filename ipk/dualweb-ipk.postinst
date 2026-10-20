@@ -1,0 +1,48 @@
+#!/bin/sh
+# Best-effort post-install setup. Default port avoids the usual LuCI port 80.
+set -e
+
+CONF="/etc/nginx/conf.d/dualweb-ipk.conf"
+DEFAULT_PORT="8081"
+PORT="$DEFAULT_PORT"
+
+# Preserve existing homepage credentials if the package is upgraded/reinstalled.
+mkdir -p /etc/dualweb
+if [ ! -s /etc/dualweb/password ]; then
+    printf '%s' 'root' > /etc/dualweb/password
+    chmod 600 /etc/dualweb/password
+fi
+if [ ! -s /etc/dualweb/session-key ]; then
+    (head -c 32 /dev/urandom | hexdump -v -e '/1 "%02x"') > /etc/dualweb/session-key
+    chmod 600 /etc/dualweb/session-key
+fi
+if [ ! -s /etc/dualweb/mihomo-secret ]; then
+    (head -c 32 /dev/urandom | hexdump -v -e '/1 "%02x"') > /etc/dualweb/mihomo-secret
+    chmod 600 /etc/dualweb/mihomo-secret
+fi
+
+# opkg/LuCI may not provide a TTY. In that case, keep the safe default port.
+if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    printf 'DualWeb IPK：请输入 Web 端口 [默认 %s]：' "$DEFAULT_PORT" > /dev/tty
+    if read PORT </dev/tty; then
+        [ -n "$PORT" ] || PORT="$DEFAULT_PORT"
+    else
+        PORT="$DEFAULT_PORT"
+    fi
+fi
+
+case "$PORT" in
+    *[!0-9]*|'') PORT="$DEFAULT_PORT" ;;
+esac
+if [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
+    PORT="$DEFAULT_PORT"
+fi
+
+/usr/bin/dualweb-port "$PORT" || {
+    echo "WARNING: Could not apply port $PORT; keeping the installed configuration." >&2
+}
+
+[ -x /etc/init.d/dualweb-api-ipk ] && /etc/init.d/dualweb-api-ipk enable
+[ -x /etc/init.d/dualweb-api-ipk ] && /etc/init.d/dualweb-api-ipk restart || true
+[ -x /etc/init.d/nginx ] && /etc/init.d/nginx enable
+exit 0
