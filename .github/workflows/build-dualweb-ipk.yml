@@ -50,6 +50,7 @@ jobs:
 
           cp web/dualweb-index.html ipk-root/www/dualweb/index.html
           cp web/dualweb-app.js ipk-root/www/dualweb/app.js
+          cp dualweb-upstream/overlay/www/dualweb/style.css ipk-root/www/dualweb/style.css
           cp web/dualweb-nginx.conf ipk-root/etc/nginx/conf.d/dualweb-ipk.conf
           cp web/dualweb-port ipk-root/usr/bin/dualweb-port
           cp ipk/dualweb-api.init ipk-root/etc/init.d/dualweb-api-ipk
