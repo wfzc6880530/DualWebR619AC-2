@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+CONF="/etc/nginx/conf.d/dualweb-ipk.conf"
+PORT="${1:-}"
+
+if [ -z "$PORT" ]; then
+    printf 'Usage: dualweb-port PORT\n'
+    printf 'Example: dualweb-port 8888\n'
+    exit 2
+fi
+case "$PORT" in
+    *[!0-9]*|'') echo "Invalid port: $PORT" >&2; exit 2 ;;
+esac
+if [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
+    echo "Port must be between 1024 and 65535." >&2
+    exit 2
+fi
+[ -f "$CONF" ] || { echo "Nginx config not found: $CONF" >&2; exit 1; }
+
+TMP="${CONF}.new"
+BACKUP="${CONF}.bak"
+sed "s/@@DUALWEB_PORT@@/$PORT/g" "$CONF" > "$TMP"
+if ! grep -q "listen $PORT default_server;" "$TMP"; then
+    echo "Could not set port in Nginx config." >&2
+    rm -f "$TMP"
+    exit 1
+fi
+cp "$CONF" "$BACKUP"
+mv "$TMP" "$CONF"
+if ! nginx -t; then
+    mv "$BACKUP" "$CONF"
+    echo "Nginx validation failed; previous configuration restored." >&2
+    exit 1
+fi
+rm -f "$BACKUP"
+if [ -x /etc/init.d/nginx ]; then
+    /etc/init.d/nginx reload || /etc/init.d/nginx restart
+fi
+echo "DualWeb port set to $PORT"
