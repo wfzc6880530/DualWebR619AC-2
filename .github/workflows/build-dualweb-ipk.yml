@@ -86,7 +86,7 @@ jobs:
           cp ipk-root/control-postinst ipk-root/CONTROL/postinst
           chmod 0755 ipk-root/CONTROL/postinst
           rm ipk-root/control-postinst
-          (cd ipk-root && tar --numeric-owner --owner=0 --group=0 -czf ../control.tar.gz CONTROL)
+          (cd ipk-root/CONTROL && tar --numeric-owner --owner=0 --group=0 -czf ../../control.tar.gz .)
           (cd ipk-root && tar --numeric-owner --owner=0 --group=0 --exclude=CONTROL -czf ../data.tar.gz .)
           printf '2.0\n' > debian-binary
           ar r dualweb-port_${VERSION}_arm_cortex-a7_neon-vfpv4.ipk debian-binary control.tar.gz data.tar.gz
