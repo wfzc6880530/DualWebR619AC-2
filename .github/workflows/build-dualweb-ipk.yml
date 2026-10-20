@@ -1,0 +1,106 @@
+name: Experimental DualWeb selectable-port IPK (ImmortalWrt 24.10)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/dualweb-port-ipk-24.10
+    paths:
+      - ".github/workflows/build-dualweb-ipk.yml"
+      - "ipk/**"
+      - "web/**"
+      - "README.md"
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout experimental branch
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends golang-go curl unzip tar gzip binutils file
+
+      - name: Build DualWeb API for R619AC ARMv7
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth=1 --branch test/openbox-artifacts https://github.com/wfzc6880530/dualweb.git dualweb-upstream
+          test -f dualweb-upstream/src/main.go
+          mkdir -p ipk-root/usr/sbin
+          cd dualweb-upstream
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags='-s -w' -o ../ipk-root/usr/sbin/dualweb-api src/main.go
+          cd ..
+          file ipk-root/usr/sbin/dualweb-api
+          grep -q 'ARM' <(file ipk-root/usr/sbin/dualweb-api)
+
+      - name: Assemble web assets and service files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p ipk-root/www/dualweb/zashboard
+          mkdir -p ipk-root/etc/nginx/conf.d ipk-root/etc/init.d ipk-root/etc/dualweb
+          mkdir -p ipk-root/usr/bin
+
+          cp web/dualweb-index.html ipk-root/www/dualweb/index.html
+          cp web/dualweb-app.js ipk-root/www/dualweb/app.js
+          cp web/dualweb-nginx.conf ipk-root/etc/nginx/conf.d/dualweb-ipk.conf
+          cp web/dualweb-port ipk-root/usr/bin/dualweb-port
+          cp ipk/dualweb-api.init ipk-root/etc/init.d/dualweb-api-ipk
+          cp ipk/dualweb-ipk.postinst ipk-root/control-postinst
+          cp ipk/README.md ipk-root/etc/dualweb/IPK-README.txt
+          chmod 0755 ipk-root/usr/sbin/dualweb-api ipk-root/usr/bin/dualweb-port ipk-root/etc/init.d/dualweb-api-ipk
+
+          curl -fL --retry 3 https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip -o /tmp/zashboard.zip
+          unzip -tq /tmp/zashboard.zip
+          mkdir -p /tmp/zashboard
+          unzip -q /tmp/zashboard.zip -d /tmp/zashboard
+          ZINDEX="$(find /tmp/zashboard -type f -name index.html -print -quit)"
+          test -n "$ZINDEX"
+          cp -a "$(dirname "$ZINDEX")/." ipk-root/www/dualweb/zashboard/
+          test -s ipk-root/www/dualweb/zashboard/index.html
+
+      - name: Build .ipk package
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PKG="dualweb-port"
+          VERSION="0.1.0"
+          mkdir -p ipk-root/CONTROL
+          cat > ipk-root/CONTROL/control <<EOF
+          Package: dualweb-port
+          Version: ${VERSION}-r1
+          Depends: nginx, nginx-mod-http-proxy, ca-bundle, ca-certificates, curl, unzip
+          Architecture: arm_cortex-a7_neon-vfpv4
+          Maintainer: wfzc6880530
+          Description: Experimental DualWeb web UI and API for R619AC / ImmortalWrt 24.10.
+           Port can be selected during interactive installation or changed with dualweb-port.
+           Does not change the existing LuCI/uhttpd port.
+          EOF
+          cp ipk-root/control-postinst ipk-root/CONTROL/postinst
+          chmod 0755 ipk-root/CONTROL/postinst
+          rm ipk-root/control-postinst
+          (cd ipk-root && tar --numeric-owner --owner=0 --group=0 -czf ../control.tar.gz CONTROL)
+          (cd ipk-root && tar --numeric-owner --owner=0 --group=0 --exclude=CONTROL -czf ../data.tar.gz .)
+          printf '2.0\n' > debian-binary
+          ar r dualweb-port_${VERSION}_arm_cortex-a7_neon-vfpv4.ipk debian-binary control.tar.gz data.tar.gz
+          mkdir -p dist
+          mv dualweb-port_${VERSION}_arm_cortex-a7_neon-vfpv4.ipk dist/
+          sha256sum dist/*.ipk > dist/SHA256SUMS
+          file dist/*.ipk
+          ar t dist/*.ipk
+          cat dist/SHA256SUMS
+
+      - name: Upload IPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dualweb-port-ipk-immortalwrt-24.10-armv7
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
