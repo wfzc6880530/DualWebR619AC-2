@@ -2,7 +2,21 @@
 
 基于 DualWeb 上游项目，为 P&W R619AC 128M（`p2w_r619ac-128m`）构建 ImmortalWrt 24.10 固件。
 
-## 构建原则
+## 实验分支：独立 IPK + 可选 Web 端口
+
+当前分支 `experiment/dualweb-port-ipk-24.10` 增加了独立 DualWeb IPK 的首次构建验证流程：
+
+- GitHub → Actions → **Experimental DualWeb selectable-port IPK (ImmortalWrt 24.10)**。
+- 支持手动触发构建，或向该实验分支推送相关文件后自动构建。
+- 构建产物是面向 R619AC ARMv7 / ImmortalWrt 24.10 的 `.ipk`，不会刷写固件，也不修改 `main`。
+- 安装时在可交互终端提示输入端口，默认 `8081`；无交互终端时使用默认端口。
+- 安装后可执行 `dualweb-port 8888` 更改端口。
+- 不自动修改 LuCI/uhttpd 监听端口。
+- 这是实验构建，尚未在真实路由器上验证；25.12 暂不承诺兼容。
+
+详细说明见 [ipk/README.md](ipk/README.md)。
+
+## 固件构建原则
 
 - 底层源码固定使用 ImmortalWrt `openwrt-24.10`，不混用 25.12 的内核或软件包路径。
 - 保留 ImmortalWrt 24.10 源码自带的 `feeds.conf.default`，不在本仓库维护或覆盖另一份 feeds 配置。
@@ -12,7 +26,7 @@
 - 固件必须包含 R619AC 128M 的 factory 和 sysupgrade 镜像，否则工作流失败。
 - DualWeb 的 UI/API/overlay 从上游项目获取，Go API 按 ARMv7 编译。
 
-## 使用
+## 固件使用
 
 GitHub → Actions → **Build DualWeb R619AC 128M (ImmortalWrt 24.10)** → Run workflow。
 
